@@ -634,6 +634,7 @@ export class OnchainAuctionCoordinator extends EventEmitter {
           jobId,
           winner,
           new Error(`undelegation timeout (${UNDELEGATE_TIMEOUT_MS}ms)`),
+          'live-sol',
         );
       }
 
@@ -673,7 +674,7 @@ export class OnchainAuctionCoordinator extends EventEmitter {
         ts: Date.now(),
       };
     } catch (err) {
-      return this.failedSettlement(jobId, winner, err);
+      return this.failedSettlement(jobId, winner, err, 'live-sol');
     }
   }
 
@@ -702,6 +703,7 @@ export class OnchainAuctionCoordinator extends EventEmitter {
           jobId,
           winner,
           new Error(`undelegation timeout (${UNDELEGATE_TIMEOUT_MS}ms)`),
+          'live-usdc-tee',
         );
       }
 
@@ -772,7 +774,7 @@ export class OnchainAuctionCoordinator extends EventEmitter {
         ts: Date.now(),
       };
     } catch (err) {
-      return this.failedSettlement(jobId, winner, err);
+      return this.failedSettlement(jobId, winner, err, 'live-usdc-tee');
     }
   }
 
@@ -792,8 +794,28 @@ export class OnchainAuctionCoordinator extends EventEmitter {
     jobId: string,
     winner: NonNullable<AuctionResult['winner']>,
     err: unknown,
+    settleMode: 'live-sol' | 'live-usdc-tee' | 'unknown' = 'unknown',
   ): SettlementResult {
     const msg = err instanceof Error ? err.message : String(err);
+
+    // LOUD failure logging. Every settle catch funnels through here, so this
+    // is the single place we surface the actual reason a settle ix blew up.
+    // Without this, the UI shows SETTLEMENT FAILED but stdout is silent and
+    // there's nothing to grep in the pm2 logs.
+    console.error(
+      `[server] settle failed for auction ${jobId} (mode=${settleMode}, winner=${winner.provider.toBase58()}, amount=${winner.amountLamports}):`,
+      msg,
+    );
+
+    // Anchor's AnchorError and web3.js's SendTransactionError both attach
+    // .logs (string[]) on the synchronous error object when the failure
+    // came from simulation. Surface those — they usually contain the
+    // program-side `panicked at` or anchor error code that explains why.
+    const anchorLogs = (err as any)?.logs;
+    if (Array.isArray(anchorLogs) && anchorLogs.length > 0) {
+      console.error('[server] anchor logs:\n  ' + anchorLogs.join('\n  '));
+    }
+
     return {
       jobId,
       winner: winner.provider.toBase58(),
