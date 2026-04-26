@@ -25,10 +25,21 @@ export interface FeedStats {
   startedAt: number | null;
 }
 
+/**
+ * Why the demo isn't running, if it isn't.
+ *   'session-cap' → this WS hit MAX_PER_SESSION (server-side, default 100).
+ *                   User must refresh to start a new session.
+ *   'budget'      → server's requester wallet dropped below the SOL floor.
+ *                   Server auto-resumes when balance recovers; UI clears
+ *                   the banner on `demo-resumed-budget`.
+ */
+export type IdleReason = 'session-cap' | 'budget' | null;
+
 export function useAuctionFeed() {
   const [auctions, setAuctions] = useState<AuctionState[]>([]);
   const [connected, setConnected] = useState(false);
   const [stats, setStats] = useState<FeedStats>({ cleared: 0, totalCostLamports: 0, startedAt: null });
+  const [idleReason, setIdleReason] = useState<IdleReason>(null);
   const wsRef = useRef<WebSocket | null>(null);
 
   useEffect(() => {
@@ -43,6 +54,11 @@ export function useAuctionFeed() {
       ws.onopen = () => {
         setConnected(true);
         setStats((s) => ({ ...s, startedAt: s.startedAt ?? Date.now() }));
+        // Re-sync visibility state on (re)connect so the server doesn't
+        // burn auctions for a tab that's already in the background.
+        if (typeof document !== 'undefined' && document.hidden) {
+          try { ws.send(JSON.stringify({ type: 'pause-session' })); } catch { /* ignore */ }
+        }
       };
       ws.onclose = () => {
         setConnected(false);
@@ -51,13 +67,16 @@ export function useAuctionFeed() {
       ws.onerror = () => ws.close();
 
       ws.onmessage = (evt) => {
-        let msg: ServerMessage;
-        try {
-          msg = JSON.parse(evt.data);
-        } catch {
+        let msg: any;
+        try { msg = JSON.parse(evt.data); } catch { return; }
+        // Control-channel events from the long-dwell protection layer.
+        if (msg.type === 'demo-idle') { setIdleReason('session-cap'); return; }
+        if (msg.type === 'demo-paused-budget') { setIdleReason('budget'); return; }
+        if (msg.type === 'demo-resumed-budget') {
+          setIdleReason((prev) => (prev === 'budget' ? null : prev));
           return;
         }
-        applyMessage(msg);
+        applyMessage(msg as ServerMessage);
       };
     };
 
@@ -68,6 +87,24 @@ export function useAuctionFeed() {
       if (reconnectTimer) window.clearTimeout(reconnectTimer);
       wsRef.current?.close();
     };
+  }, []);
+
+  // Page Visibility integration. Sends pause-session when the tab is hidden
+  // and resume-session when it's revealed. The server stops counting that
+  // session as `active` while paused, so a backgrounded tab won't drain SOL.
+  useEffect(() => {
+    if (typeof document === 'undefined') return;
+    const onVisibility = () => {
+      const ws = wsRef.current;
+      if (!ws || ws.readyState !== WebSocket.OPEN) return;
+      try {
+        ws.send(
+          JSON.stringify({ type: document.hidden ? 'pause-session' : 'resume-session' }),
+        );
+      } catch { /* socket closing; ignore */ }
+    };
+    document.addEventListener('visibilitychange', onVisibility);
+    return () => document.removeEventListener('visibilitychange', onVisibility);
   }, []);
 
   function applyMessage(msg: ServerMessage) {
@@ -161,5 +198,5 @@ export function useAuctionFeed() {
     return () => window.clearInterval(tick);
   }, []);
 
-  return { auctions, connected, stats };
+  return { auctions, connected, stats, idleReason };
 }

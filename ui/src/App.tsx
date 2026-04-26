@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { LeftPane } from './components/LeftPane';
 import { RightPane } from './components/RightPane';
 import { Arcade } from './components/Arcade';
+import { DemoBanner } from './components/DemoBanner';
 import { useAuctionFeed } from './hooks/useAuctionFeed';
 
 /** Read the route from window.location.hash. Empty / "#/" → dashboard. */
@@ -31,7 +32,7 @@ export default function App() {
 }
 
 function Dashboard() {
-  const { auctions, connected, stats } = useAuctionFeed();
+  const { auctions, connected, stats, idleReason } = useAuctionFeed();
 
   // Force re-render every ~250ms so throughput counter ticks even when no events arrive.
   const [, setTick] = useState(0);
@@ -42,6 +43,7 @@ function Dashboard() {
 
   return (
     <div className="h-full flex flex-col bg-zinc-950 text-zinc-100">
+      <DemoBanner reason={idleReason} />
       <header className="flex items-center justify-between px-6 py-3 border-b border-zinc-800 bg-zinc-950">
         <div className="flex items-baseline gap-3">
           <div className="text-xl font-bold tracking-tight">SealedBid</div>

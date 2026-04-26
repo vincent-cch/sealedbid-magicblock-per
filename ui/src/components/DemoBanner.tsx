@@ -1,0 +1,28 @@
+import type { IdleReason } from '../hooks/useAuctionFeed';
+
+/**
+ * Top-of-page strip shown when the server has paused the demo. Covers two
+ * states from the long-dwell protection layer:
+ *
+ *   session-cap  (per-session 100-auction limit) → "refresh to resume"
+ *   budget       (requester wallet below floor)  → "wallet refilling"
+ */
+export function DemoBanner({ reason }: { reason: IdleReason }) {
+  if (!reason) return null;
+  const text =
+    reason === 'session-cap'
+      ? 'Demo paused — refresh to resume.'
+      : 'Demo paused — wallet refilling.';
+  const tone =
+    reason === 'session-cap'
+      ? 'border-amber-400 text-amber-200 bg-amber-500/10'
+      : 'border-cyan-400 text-cyan-200 bg-cyan-500/10';
+  return (
+    <div
+      className={`px-4 py-2 text-center text-xs tracking-wide border-b-2 ${tone}`}
+      role="status"
+    >
+      {text}
+    </div>
+  );
+}

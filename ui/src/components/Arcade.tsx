@@ -1,4 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
+import { DemoBanner } from './DemoBanner';
+import type { IdleReason } from '../hooks/useAuctionFeed';
 
 /* ─────────────────────────────────────────────────────────────────────────
  * Arcade view — pixel-art demo for the BD outreach video.
@@ -101,6 +103,7 @@ export function Arcade() {
     startedAt: 0,
     winners: { speedy: 0, accurate: 0, budget: 0 },
   });
+  const [idleReason, setIdleReason] = useState<IdleReason>(null);
 
   // Force ticks for time-based UI (throughput counter, fade timers).
   const [, setTick] = useState(0);
@@ -123,6 +126,10 @@ export function Arcade() {
       ws.onopen = () => {
         setConnected(true);
         setStats((s) => (s.startedAt ? s : { ...s, startedAt: Date.now() }));
+        // Re-sync visibility on connect so a backgrounded tab doesn't burn auctions.
+        if (typeof document !== 'undefined' && document.hidden) {
+          try { ws.send(JSON.stringify({ type: 'pause-session' })); } catch { /* ignore */ }
+        }
       };
       ws.onclose = () => {
         setConnected(false);
@@ -132,6 +139,13 @@ export function Arcade() {
       ws.onmessage = (evt) => {
         try {
           const msg = JSON.parse(evt.data);
+          // Control channel — long-dwell protection.
+          if (msg.type === 'demo-idle') { setIdleReason('session-cap'); return; }
+          if (msg.type === 'demo-paused-budget') { setIdleReason('budget'); return; }
+          if (msg.type === 'demo-resumed-budget') {
+            setIdleReason((prev) => (prev === 'budget' ? null : prev));
+            return;
+          }
           handleEvent(msg);
         } catch {
           /* ignore bad frames */
@@ -145,6 +159,22 @@ export function Arcade() {
       if (reconnectTimer) window.clearTimeout(reconnectTimer);
       wsRef.current?.close();
     };
+  }, []);
+
+  // Page Visibility integration — same pattern as the Dashboard hook.
+  useEffect(() => {
+    if (typeof document === 'undefined') return;
+    const onVisibility = () => {
+      const ws = wsRef.current;
+      if (!ws || ws.readyState !== WebSocket.OPEN) return;
+      try {
+        ws.send(
+          JSON.stringify({ type: document.hidden ? 'pause-session' : 'resume-session' }),
+        );
+      } catch { /* ignore */ }
+    };
+    document.addEventListener('visibilitychange', onVisibility);
+    return () => document.removeEventListener('visibilitychange', onVisibility);
   }, []);
 
   function handleEvent(msg: any): void {
@@ -263,6 +293,13 @@ export function Arcade() {
       <div className="stars" />
       <div className="stars2" />
       <div className="stars3" />
+
+      {/* Long-dwell protection banner (entry ab). */}
+      {idleReason && (
+        <div className="absolute top-0 left-0 right-0 z-30">
+          <DemoBanner reason={idleReason} />
+        </div>
+      )}
 
       {/* HEADER */}
       <div className="relative z-10 flex items-center justify-between px-8 py-4 border-b-2 border-fuchsia-500/40">
