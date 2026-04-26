@@ -5,8 +5,8 @@ import type { IdleReason } from '../hooks/useAuctionFeed';
 /* ─────────────────────────────────────────────────────────────────────────
  * Arcade view — pixel-art demo for the BD outreach video.
  *
- * Self-contained: opens its own WebSocket to ws://localhost:8787 (same as
- * the dashboard hook) and reads the full event stream including the
+ * Self-contained: opens its own WebSocket to VITE_WS_URL (default
+ * ws://localhost:8787 for dev) and reads the full event stream including the
  * v2-rich events the dashboard's reducer drops (job-delegated,
  * bid-submitted, sponsor-funded, etc.). Animations are pure CSS keyframes
  * defined in index.html (.projectile / .coin / .vault-pulse / etc.) so
@@ -34,7 +34,9 @@ import type { IdleReason } from '../hooks/useAuctionFeed';
  *
  * ───────────────────────────────────────────────────────────────────────── */
 
-const WS_URL = 'ws://localhost:8787';
+// WebSocket endpoint. Set VITE_WS_URL at build time to override (see
+// ui/.env.example). Same default as useAuctionFeed.
+const WS_URL = import.meta.env.VITE_WS_URL ?? 'ws://localhost:8787';
 
 // Provider config — keys MUST match `providerName` from the coordinator.
 const SHIPS = [

@@ -1,7 +1,9 @@
 import { useEffect, useRef, useState } from 'react';
 import { AuctionState, ServerMessage } from '../types';
 
-const WS_URL = 'ws://localhost:8787';
+// WebSocket endpoint. Set VITE_WS_URL at build time to override (see
+// ui/.env.example). Defaults to localhost:8787 for `npm run server` dev.
+const WS_URL = import.meta.env.VITE_WS_URL ?? 'ws://localhost:8787';
 // Keep the last MAX_CLEARED completed auctions visible forever (or until
 // they fall out the bottom of the rolling window). The dashboard's left
 // pane uses this stack to show throughput contrast vs the simulated

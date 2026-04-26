@@ -102,6 +102,24 @@ The same WebSocket feed drives two completely separate visualizations:
 
 Routing is hash-based (no `react-router` dep) — `/` renders `<Dashboard />`, anything else with `#/arcade` renders `<Arcade />`. The dashboard's left pane stacks the last 8 cleared auctions with positional opacity tiers (100% → 70% → 40%), so the throughput delta vs the right-side mainnet sim is obvious at a glance.
 
+### WebSocket endpoint config
+
+Both views read their WS URL from the `VITE_WS_URL` env var at **build time** (Vite inlines `VITE_*` constants into the bundle). Default is `ws://localhost:8787` so `npm run dev` Just Works against `npm run server`.
+
+For the public VPS deploy, point at the reverse-proxied wss endpoint before building the static bundle:
+
+```bash
+# Local dev — no env needed.
+cd ui && npm run dev
+
+# Production build (e.g. for VPS at sealedbid.liquidated.xyz)
+cd ui
+echo 'VITE_WS_URL=wss://sealedbid.liquidated.xyz/ws' > .env.production
+npm run build   # writes ui/dist/ with the URL inlined
+```
+
+A template lives at `ui/.env.example`. **Don't edit `useAuctionFeed.ts` or `Arcade.tsx` to swap the URL** — that pattern caused dev↔VPS drift and is no longer necessary.
+
 ## Stress test
 
 The CLI runner has a `--stress N` mode for parallel-wave auctions. Best config for devnet's public RPC (rate limit caps higher concurrencies):
