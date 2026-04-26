@@ -1,0 +1,41 @@
+{
+  "name": "sealedbid",
+  "version": "0.0.1",
+  "description": "Sealed-bid compute auction house for AI agents, running inside a MagicBlock Private Ephemeral Rollup",
+  "type": "module",
+  "scripts": {
+    "gen-wallets": "npx tsx scripts/gen-wallets.ts",
+    "fund-wallets": "npx tsx scripts/fund-wallets.ts",
+    "bootstrap": "npx tsx scripts/bootstrap-providers.ts",
+    "check-per": "npx tsx scripts/check-per.ts",
+    "test:onchain": "npx tsx tests/sealedbid.test.ts",
+    "demo": "npx tsx demo-run.ts",
+    "demo:5": "npx tsx demo-run.ts --count 5",
+    "post-job": "npx tsx clients/post-job.ts",
+    "delegate-job": "npx tsx clients/delegate-job.ts",
+    "submit-bid": "npx tsx clients/submit-bid.ts",
+    "submit-bid-nontee": "npx tsx clients/submit-bid-nontee.ts",
+    "server": "npx tsx server.ts",
+    "ui": "cd ui && npm run dev"
+  },
+  "dependencies": {
+    "@coral-xyz/anchor": "^0.32.1",
+    "@magicblock-labs/ephemeral-rollups-sdk": "^0.11.1",
+    "@noble/curves": "^1.9.7",
+    "@noble/hashes": "^1.8.0",
+    "@solana/spl-token": "^0.4.0",
+    "@solana/web3.js": "^1.95.0",
+    "bignumber.js": "^9.1.2",
+    "bs58": "^6.0.0",
+    "dotenv": "^17.3.1",
+    "tweetnacl": "^1.0.3",
+    "ws": "^8.18.0"
+  },
+  "devDependencies": {
+    "@types/node": "^20.0.0",
+    "@types/ws": "^8.5.13",
+    "pptxgenjs": "^4.0.1",
+    "tsx": "^4.7.0",
+    "typescript": "^5.4.0"
+  }
+}

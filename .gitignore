@@ -1,0 +1,57 @@
+# ─── Secrets & keypairs (NEVER COMMIT) ───────────────────────────────────
+# All wallet directories — provider keypairs, requester keypair, program-id keypair.
+wallets/
+**/wallets/
+
+# Solana CLI / Anchor keypair conventions.
+**/id.json
+**/*-keypair.json
+**/keypair.json
+
+# Environment files. Ship .env.example only.
+.env
+.env.*
+!.env.example
+**/.env
+**/.env.*
+!**/.env.example
+
+# Generic credential / secret patterns.
+**/credentials*
+**/secrets*
+**/*.pem
+**/*.key
+
+# ─── Build & dependencies ────────────────────────────────────────────────
+node_modules/
+**/node_modules/
+target/
+**/target/
+dist/
+**/dist/
+.anchor/
+**/.anchor/
+
+# ─── Logs ────────────────────────────────────────────────────────────────
+*.log
+**/*.log
+logs/
+
+# ─── Editor / OS junk ────────────────────────────────────────────────────
+.DS_Store
+**/.DS_Store
+.idea/
+.vscode/
+**/.swp
+**/.swo
+
+# Office lock files (e.g. ~$SealedBid.pptx).
+~$*
+
+# ─── Tooling state ───────────────────────────────────────────────────────
+.claude/
+**/.claude/
+
+# ─── Demo / slide artefacts (regenerated; not source) ────────────────────
+slides-out/
+*.pptx
