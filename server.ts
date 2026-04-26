@@ -32,6 +32,7 @@ import {
   OnchainAuctionCoordinator,
   type AuctionResult,
   type ProviderEntry,
+  type SettlementModeOption,
   type TaskTypeName,
 } from './auction/onchain-coordinator.js';
 
@@ -48,6 +49,26 @@ const BUDGET_POLL_MS = 60_000;
 const BASE_RPC_URL = process.env.SOLANA_RPC_URL ?? 'https://api.devnet.solana.com';
 const EPHEMERAL_RPC_URL =
   process.env.MAGICBLOCK_EPHEMERAL_RPC_URL ?? 'https://devnet-tee.magicblock.app';
+
+/**
+ * Settlement mode for the server's auction loop. Override via SETTLEMENT_MODE
+ * env var. The default 'live-usdc-tee' assumes the requester wallet has USDC
+ * for the transferSpl bundle; deployments without USDC should set this to
+ * 'live-sol' (program-enforced SOL payout) so settle ix actually lands.
+ *
+ *   live-usdc-tee  → settle_auction_refund + transferSpl(private, TEE)
+ *   live-sol       → settle_auction (program-signed SOL payout)
+ *   simulated      → no settle ix; for stress / cold-start tests
+ */
+const VALID_MODES: SettlementModeOption[] = ['live-sol', 'live-usdc-tee', 'simulated'];
+const SETTLEMENT_MODE = ((): SettlementModeOption => {
+  const raw = (process.env.SETTLEMENT_MODE ?? 'live-usdc-tee').trim();
+  if ((VALID_MODES as string[]).includes(raw)) return raw as SettlementModeOption;
+  console.warn(
+    `[server] SETTLEMENT_MODE='${raw}' is not one of ${VALID_MODES.join(' | ')} — falling back to 'live-usdc-tee'`,
+  );
+  return 'live-usdc-tee';
+})();
 
 const TASK_TYPES: TaskTypeName[] = ['image-caption', 'text-summarize', 'echo'];
 
@@ -78,6 +99,7 @@ const providers: ProviderEntry[] = [
 const coordinator = new OnchainAuctionCoordinator(requesterKp, {
   baseRpcUrl: BASE_RPC_URL,
   ephemeralRpcUrl: EPHEMERAL_RPC_URL,
+  settlementMode: SETTLEMENT_MODE,
 });
 
 // ─── Session state ──────────────────────────────────────────────────────────
@@ -431,6 +453,7 @@ console.log(`[server] WebSocket on ws://localhost:${PORT}`);
 console.log(`[server] requester: ${requesterKp.publicKey.toBase58()}`);
 console.log(`[server] base RPC : ${BASE_RPC_URL}`);
 console.log(`[server] PER  RPC : ${EPHEMERAL_RPC_URL}`);
+console.log(`[server] settle   : ${SETTLEMENT_MODE}`);
 console.log(`[server] caps     : ${MAX_PER_SESSION} auctions/session, ${SERVER_REQUESTER_FLOOR_SOL} SOL floor`);
 
 const ok = await startup();

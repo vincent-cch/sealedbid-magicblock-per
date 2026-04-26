@@ -71,6 +71,24 @@ All three modes share the trustless SOL escrow flow up through `close_auction` +
 | **Private USDC** | (default) `--live-usdc-tee` | `settle_auction_refund` (full SOL escrow → requester) + `transferSpl(private, TEE)` for async USDC payout | ~2.37M lamports SOL + bid amount in µUSDC | Schedule tx lands immediately; Hydra crank delivers async (devnet cadence unspecified per knowledge pack §15). Best for institutional pitch — privacy + async finalization is a feature, not a bug. |
 | **Simulated** | `--simulated` | No settle ix; emits sentinel sig. Job stays delegated, escrow stranded. | ~5.7M lamports stranded | Stress testing only — never use for real demos because the SOL leak compounds. |
 
+The CLI picks the mode via flags (above). The **WebSocket server** (`server.ts`) picks via the `SETTLEMENT_MODE` env var:
+
+```bash
+SETTLEMENT_MODE=live-sol     npm run server   # synchronous SOL payout
+SETTLEMENT_MODE=live-usdc-tee npm run server  # default — needs USDC in requester wallet
+SETTLEMENT_MODE=simulated    npm run server   # no settle ix
+```
+
+Default is `live-usdc-tee`, which assumes the requester wallet holds USDC for the `transferSpl` bundle. **Deployments without USDC funding must set `SETTLEMENT_MODE=live-sol`** or the settle step throws every auction. Unknown values fall back to `live-usdc-tee` with a warning.
+
+For pm2 (e.g. on the VPS) update the env and restart with `--update-env`:
+
+```bash
+pm2 set sealedbid-server:SETTLEMENT_MODE live-sol
+pm2 restart sealedbid-server --update-env
+# Or, declared in ecosystem.config.cjs under env: { SETTLEMENT_MODE: 'live-sol' }, then pm2 reload.
+```
+
 ## Quickstart — three commands
 
 ```bash
