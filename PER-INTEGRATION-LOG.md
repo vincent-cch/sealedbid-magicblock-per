@@ -6,6 +6,76 @@ Running log of MagicBlock Private Ephemeral Rollup integration issues hit while 
 
 ---
 
+## 2026-04-27 (aa) — VPS deployment lessons — five real footguns from going public
+
+**Status:** ✅ all resolved, but each cost meaningful debug cycles. Capturing so the next time we deploy a PER demo to a public URL it goes smoother.
+
+### 1. `spawnSync anchor ENOENT` on a host without anchor CLI
+
+The original coordinator shelled out to `anchor idl fetch` at runtime to load the program IDL. On the VPS (no anchor CLI installed) every auction failed at the IDL-load step with `spawnSync anchor ENOENT`. We spent multiple deploy cycles before tracing it.
+
+**Fix that worked:** bundle a snapshot of the IDL JSON in the repo (`idl/sealedbid.json`) and load it at runtime with `readFileSync(fileURLToPath(import.meta.url))`. Zero subprocess. `Program.fetchIdl(programId, provider)` looked like the obvious alternative but **returned `null` because anchor-cli 1.0.1 publishes the IDL in a metadata-account format that `@coral-xyz/anchor 0.32.1` doesn't decode**. Bundled JSON sidesteps both.
+
+**Rule for the next deploy:** never shell out to `anchor` at runtime. If you need the IDL, ship it as a static JSON in the repo. To refresh after a future program upgrade: `anchor idl fetch <programId> --provider.cluster devnet > idl/sealedbid.json` and commit.
+
+### 2. Hardcoded `ws://localhost:8787` vs production `wss://hostname/ws`
+
+The UI's WebSocket URL was hardcoded for local dev. Each VPS deploy required `sed`-replacing the URL after `git pull`, which conflicts on the next pull. Painful loop.
+
+**Fix that worked:** `import.meta.env.VITE_WS_URL` with `'ws://localhost:8787'` default. Production set via `ui/.env.production` with `VITE_WS_URL=wss://sealedbid.liquidated.xyz/ws`, baked into the static bundle at build time. `.env.production` is gitignored so it stays VPS-local.
+
+**Rule for the next deploy:** any host-or-environment-specific value in client code goes through `import.meta.env.VITE_*` from day one. Never hardcode a localhost URL in code that ships to production.
+
+### 3. Provider wallets must clear rent-exempt minimum BEFORE any settlement
+
+The on-chain `settle_auction` ix transfers the winning bid amount (180k–220k lamports) from the Job PDA escrow to the winner. **A SystemAccount with non-zero data lamports can't exist below ~890,880 lamports rent-exempt minimum.** Solana rejects any tx that would leave a touched account below that floor.
+
+Fresh keypairs on the VPS had 0 SOL balance. First settlement → Solana rejects the tx with:
+
+```
+Transaction results in an account (2) with insufficient funds for rent.
+```
+
+Account index 2 in our SettleAuction Accounts struct = the winner.
+
+**Fix that worked:** transfer ≥0.01 SOL to each provider wallet *before* the server starts firing settlements. The existing `bootstrap-providers.ts` script does this but the VPS startup ran `npm run gen-wallets` only — never bootstrapped.
+
+**Rule for the next deploy:** after `npm run gen-wallets`, always run `npm run bootstrap` (or the equivalent transfer loop) so all provider wallets are above rent-exempt min before the server fires its first auction. Better: have the server itself fail-fast on startup if any active wallet is below rent-exempt min, with a clear error pointing at the bootstrap step.
+
+### 4. Silent catches make every error mode look identical to the user
+
+The coordinator's `failedSettlement()` helper emitted `mode: 'failed'` to the WebSocket without any `console.error` of the underlying err. The UI rendered "SETTLEMENT FAILED" in rose. From the user's perspective, every settlement looked broken — no signal what was actually wrong. Diagnosing took multiple grep passes through pm2 logs that returned nothing.
+
+**Fix that worked:** add `console.error('[server] settle failed for auction <id> (mode=<mode>):', err.message)` plus extracting `err.logs` for Anchor errors. After this landed, the actual rent-exempt error surfaced in 30 seconds.
+
+**Rule for the next deploy:** any catch block that suppresses an error into a UI status MUST also `console.error` the original err with: jobId / context, mode, err.message, and any `err.logs` array (Anchor / SendTransactionError exposes those). Surface the failure loudly to stdout/stderr; let the UI show a friendly status separately.
+
+### 5. Single-flight server loop on devnet public RPC = perception of slowness
+
+Server runs auctions one at a time through OnchainAuctionCoordinator. Each takes ~7-9 sec. With concurrency 1 and devnet public RPC capping at concurrency 2 anyway, the visible cadence is ~0.13-0.27 auctions/sec. Reviewers expect "fast" in a MagicBlock demo and the methodical pace reads as "slow."
+
+This isn't a bug — it's the canonical configuration. But for a public demo URL where reviewers might watch for 30 sec and form an impression, the single-flight pace doesn't communicate "MagicBlock-fast" the way it should.
+
+**Mitigations available (deferred for now):**
+- Parallelize the server's auto-loop (5-10 in flight at once, like the existing CLI stress-mode)
+- Swap to a private RPC (Helius / Triton) to lift the concurrency-2 ceiling
+- Show a stress-test recording on the page as a static asset for the "look how fast it really goes" angle
+- Add a "burst on visit" trigger so the first 30 sec of activity for any new visitor is the dramatic version
+
+**Rule for the next deploy:** if the public URL is meant to look fast, ship parallel + private-RPC from day one. Don't expect single-flight to communicate the latency story.
+
+### Summary table (footguns ranked by debug-cost)
+
+| # | Footgun | Time to diagnose | Fix complexity |
+|---|---|---|---|
+| 1 | spawnSync anchor ENOENT | ~30 min | Easy — bundle IDL JSON |
+| 2 | localhost WS URL stomps git pull | ~20 min (recurring) | Easy — VITE_WS_URL env var |
+| 3 | Rent-exempt minimum on fresh providers | ~60 min | Easy — bootstrap step before first settle |
+| 4 | Silent catch hiding the real error | ~45 min (compounded #3) | Easy — add console.error in failedSettlement |
+| 5 | Single-flight cadence reads slow | n/a (architectural) | Medium — parallelize loop + private RPC |
+
+---
+
 ## 2026-04-26 (z) — Arcade view (`#/arcade`) — pixel-art demo for the social clip
 
 **Status:** ✅ shipped as a polish add-on. Hash-routed second view; the institutional dashboard at `/` is untouched.
