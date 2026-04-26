@@ -10,6 +10,31 @@ This is the Level B + Level C steps 1 & 3b progression of the v1 hackathon proto
 - **Settlement** is program-signed: `settle_auction` pays the winner from a SOL escrow held inside the Job PDA and refunds the unused remainder to the requester (Level C step 3b). Or, in private USDC mode, `settle_auction_refund` reclaims the SOL escrow and the SDK's `transferSpl(visibility:'private', validator:TEE)` schedules an async-finalized USDC transfer (Level C step 1).
 - **No off-chain custody decisions.** The coordinator orchestrates; the program enforces.
 
+## Built on MagicBlock Ephemeral Rollups
+
+This is a reference implementation of MagicBlock's PER + delegation pattern. Every canonical primitive from `ephemeral-rollups-sdk` is exercised end-to-end. If you're auditing the repo for MagicBlock usage, here's where to look:
+
+| Primitive | Where it's used in this repo |
+|---|---|
+| `ephemeral-rollups-sdk` crate | [`programs/sealedbid/Cargo.toml`](./programs/sealedbid/Cargo.toml) — `ephemeral-rollups-sdk = "0.11.2"` |
+| `#[ephemeral]` program macro | [`programs/sealedbid/src/lib.rs`](./programs/sealedbid/src/lib.rs) line 36 |
+| `#[delegate]` proc-macro | `delegate_job` accounts struct in `lib.rs` (line 422) |
+| `#[ephemeral_accounts]` macro | `submit_bid` and `close_auction` accounts in `lib.rs` (line 388) |
+| `commit_and_undelegate_accounts` | `close_auction` in `lib.rs` (line 257) — schedules Job state return to L1 |
+| `DelegateConfig` | `delegate_job` ix in `lib.rs` (line 149) |
+| `MAGIC_PROGRAM_ID` / `MAGIC_CONTEXT_ID` | imported from `ephemeral_rollups_sdk::consts` and CPI'd in `lib.rs` |
+| MagicBlock ephemeral RPC | [`config.ts`](./config.ts) — `https://devnet.magicblock.app` (TEE: `https://devnet-tee.magicblock.app`) |
+| MagicBlock Payments API (private USDC) | [`config.ts`](./config.ts) — `https://payments.magicblock.app` |
+| TEE validator pubkey | [`config.ts`](./config.ts) — `MTEWGuqxUpYZGFJQcp8tLN7x5v9BSeoFHYWQQ3n3xzo` |
+| `transferSpl(visibility:'private', validator:TEE)` | private USDC settlement path (Level C step 1) |
+
+**On-chain proof of MagicBlock integration:**
+
+- Program: [`5JaacAzrnjCwsigZxxHBDkiNuT2SQFG8xxMKVgyy629Q`](https://explorer.solana.com/address/5JaacAzrnjCwsigZxxHBDkiNuT2SQFG8xxMKVgyy629Q?cluster=devnet) (Solana devnet)
+- Every `delegate_job` transaction this program emits CPIs into MagicBlock's canonical delegation program (`DELeGGvXpWV2fqJUhqcF5ZSYMS4JTLjteaAMARRSaeSh`). Sample tx: [delegate_job receipt](https://explorer.solana.com/tx/5KmaLr1e5VGw3KKKaFAMPX7CmwzyRiCtAY2S2iSgCULor2hJxTSmmDWdQVeGiaYYfG8xgmFAGVEG6Z8LZ5zKpyPU?cluster=devnet)
+- Every `close_auction` tx CPIs into the magic program (`Magic11111111111111111111111111111111111111`) for the `commit_and_undelegate` schedule
+- Lessons from building this: see [`PER-INTEGRATION-LOG.md`](./PER-INTEGRATION-LOG.md) (~1,500 lines, 25+ canonical patterns and footguns)
+
 ## Architecture
 
 ```
