@@ -10,10 +10,10 @@ import anchorPkg from '@coral-xyz/anchor';
 const { AnchorProvider, BN, Program, Wallet } = anchorPkg;
 type AnchorIdl = typeof anchorPkg extends { Idl: infer T } ? T : any;
 import { Connection, Keypair, PublicKey, SystemProgram } from '@solana/web3.js';
-import { execFileSync } from 'node:child_process';
 import { readFileSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 
 // On-chain addresses confirmed at deploy time (PER-INTEGRATION-LOG.md entry k).
 const PROGRAM_ID = new PublicKey('5JaacAzrnjCwsigZxxHBDkiNuT2SQFG8xxMKVgyy629Q');
@@ -42,18 +42,15 @@ async function main() {
   //    NOTE: anchor-cli 1.0.1 publishes IDL via the new "Program Metadata Program"
   //    (ProgM6JCCvbYkfKqJYHePx4xxSUSqJp7rh8Lyv7nk7S). @coral-xyz/anchor 0.32.1 still
   //    only knows the old PDA-based scheme and returns null. We shell out to the
-  //    Rust CLI (`anchor idl fetch`) which DOES read the new format. The IDL still
-  //    comes from the chain — we are just using a different transport.
-  const idlJson = execFileSync(
-    'anchor',
-    ['idl', 'fetch', PROGRAM_ID.toBase58(), '--provider.cluster', 'devnet'],
-    { encoding: 'utf-8' },
-  );
-  const idl = JSON.parse(idlJson) as AnchorIdl;
-  // Defensive override: in case the on-chain IDL was uploaded before the program
-  // keypair was reconciled, force the canonical program ID. Harmless if already correct.
+  //    Rust CLI used to be the source via `anchor idl fetch`, but we now bundle
+  //    a snapshot at idl/sealedbid.json so this works on hosts without the
+  //    anchor CLI installed (entry aa). The IDL is still the on-chain one —
+  //    just baked into the repo so a `cp` is enough to refresh it.
+  const here = path.dirname(fileURLToPath(import.meta.url));
+  const idlPath = path.resolve(here, '..', 'idl', 'sealedbid.json');
+  const idl = JSON.parse(readFileSync(idlPath, 'utf-8')) as AnchorIdl;
   (idl as any).address = PROGRAM_ID.toBase58();
-  console.log('IDL fetched   :  on-chain via `anchor idl fetch` (address=' + (idl as any).address + ')');
+  console.log('IDL fetched   :  bundled (address=' + (idl as any).address + ')');
 
   const program = new Program(idl as AnchorIdl, provider);
 

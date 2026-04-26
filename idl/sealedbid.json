@@ -1,0 +1,921 @@
+{
+  "address": "5JaacAzrnjCwsigZxxHBDkiNuT2SQFG8xxMKVgyy629Q",
+  "metadata": {
+    "name": "sealedbid",
+    "version": "0.1.0",
+    "spec": "0.1.0",
+    "description": "On-chain sealed-bid auction with PER delegation (Level B)"
+  },
+  "instructions": [
+    {
+      "name": "close_auction",
+      "docs": [
+        "Close an auction by inspecting all submitted Bid PDAs, writing the",
+        "winner into Job state, draining the ephemeral Bid lamports back into",
+        "the Job sponsor pool, and scheduling a commit+undelegate so the Job",
+        "returns to L1 with state intact. Runs INSIDE the ER (Job is delegated).",
+        "",
+        "remaining_accounts MUST be writable Bid PDAs (we mutate them to drain",
+        "lamports). The lowest amount wins; ties resolved by first-seen order.",
+        "",
+        "Idempotent at the winner-selection level: if Job.winner is already",
+        "Some, returns AuctionAlreadyClosed. After this ix lands and the magic",
+        "program processes the scheduled intent, the Job PDA flips back to",
+        "being owned by this program on L1, ready for settle_auction."
+      ],
+      "discriminator": [
+        225,
+        129,
+        91,
+        48,
+        215,
+        73,
+        203,
+        172
+      ],
+      "accounts": [
+        {
+          "name": "requester",
+          "docs": [
+            "The original requester. NO `mut` — ER writes are gasless per knowledge",
+            "pack §15. Requester→Job linkage is verified in the handler."
+          ],
+          "signer": true
+        },
+        {
+          "name": "job",
+          "docs": [
+            "in PER), data is manually deserialized, and Job.requester is verified",
+            "against the signer. We skip Anchor's seeds constraint here because the",
+            "nonce lives inside the account data and re-deriving it would require",
+            "reading the buffer twice. Taken as AccountInfo (not Account<Job>) so",
+            "Anchor's exit-time serialize doesn't fight the magic program's mid-tx",
+            "ownership staging triggered by commit_and_undelegate (same pattern as",
+            "delegate_job)."
+          ],
+          "writable": true
+        },
+        {
+          "name": "magic_context",
+          "docs": [
+            "fails if this is wrong."
+          ],
+          "writable": true,
+          "address": "MagicContext1111111111111111111111111111111"
+        },
+        {
+          "name": "magic_program",
+          "docs": [
+            "program identity; the CPI invokes it directly."
+          ],
+          "address": "Magic11111111111111111111111111111111111111"
+        }
+      ],
+      "args": []
+    },
+    {
+      "name": "delegate_job",
+      "docs": [
+        "Hand a previously-initialized Job PDA to the TEE validator. Must be",
+        "signed by the original requester (PDA seeds bind to it). After this",
+        "ix lands on devnet, the Job PDA's owner flips to the delegation",
+        "program and subsequent reads/writes route through the ephemeral RPC."
+      ],
+      "discriminator": [
+        197,
+        216,
+        20,
+        18,
+        206,
+        198,
+        106,
+        158
+      ],
+      "accounts": [
+        {
+          "name": "requester",
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "buffer_job",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  98,
+                  117,
+                  102,
+                  102,
+                  101,
+                  114
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "job"
+              }
+            ],
+            "program": {
+              "kind": "const",
+              "value": [
+                63,
+                239,
+                150,
+                255,
+                60,
+                130,
+                241,
+                1,
+                30,
+                195,
+                69,
+                130,
+                203,
+                207,
+                57,
+                210,
+                245,
+                244,
+                18,
+                162,
+                161,
+                53,
+                52,
+                154,
+                225,
+                215,
+                69,
+                58,
+                208,
+                179,
+                128,
+                19
+              ]
+            }
+          }
+        },
+        {
+          "name": "delegation_record_job",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  100,
+                  101,
+                  108,
+                  101,
+                  103,
+                  97,
+                  116,
+                  105,
+                  111,
+                  110
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "job"
+              }
+            ],
+            "program": {
+              "kind": "account",
+              "path": "delegation_program"
+            }
+          }
+        },
+        {
+          "name": "delegation_metadata_job",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  100,
+                  101,
+                  108,
+                  101,
+                  103,
+                  97,
+                  116,
+                  105,
+                  111,
+                  110,
+                  45,
+                  109,
+                  101,
+                  116,
+                  97,
+                  100,
+                  97,
+                  116,
+                  97
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "job"
+              }
+            ],
+            "program": {
+              "kind": "account",
+              "path": "delegation_program"
+            }
+          }
+        },
+        {
+          "name": "job",
+          "docs": [
+            "delegation program CPI."
+          ],
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  106,
+                  111,
+                  98
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "requester"
+              },
+              {
+                "kind": "arg",
+                "path": "args.job_nonce"
+              }
+            ]
+          }
+        },
+        {
+          "name": "owner_program",
+          "address": "5JaacAzrnjCwsigZxxHBDkiNuT2SQFG8xxMKVgyy629Q"
+        },
+        {
+          "name": "delegation_program",
+          "address": "DELeGGvXpWV2fqJUhqcF5ZSYMS4JTLjteaAMARRSaeSh"
+        },
+        {
+          "name": "system_program",
+          "address": "11111111111111111111111111111111"
+        }
+      ],
+      "args": [
+        {
+          "name": "args",
+          "type": {
+            "defined": {
+              "name": "DelegateJobArgs"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "post_job",
+      "docs": [
+        "Post a new job. Initializes the Job PDA on Solana base layer AND",
+        "escrows `max_bid_deposit` lamports inside the Job (Level C step 3b).",
+        "Delegation to the TEE validator is a separate `delegate_job` ix.",
+        "",
+        "Escrow design: any lamports the Job holds beyond rent-exempt minimum",
+        "are program-controlled. settle_auction (run after the auction closes",
+        "and the Job is undelegated back to L1) is the only path that can move",
+        "them out: winning_amount → winner, the rest refunded to requester via",
+        "Anchor's `close = requester` constraint."
+      ],
+      "discriminator": [
+        34,
+        208,
+        58,
+        248,
+        129,
+        234,
+        179,
+        211
+      ],
+      "accounts": [
+        {
+          "name": "requester",
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "job",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  106,
+                  111,
+                  98
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "requester"
+              },
+              {
+                "kind": "arg",
+                "path": "args.job_nonce"
+              }
+            ]
+          }
+        },
+        {
+          "name": "system_program",
+          "address": "11111111111111111111111111111111"
+        }
+      ],
+      "args": [
+        {
+          "name": "args",
+          "type": {
+            "defined": {
+              "name": "PostJobArgs"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "process_undelegation",
+      "discriminator": [
+        196,
+        28,
+        41,
+        206,
+        48,
+        37,
+        51,
+        167
+      ],
+      "accounts": [
+        {
+          "name": "base_account",
+          "writable": true
+        },
+        {
+          "name": "buffer"
+        },
+        {
+          "name": "payer",
+          "writable": true
+        },
+        {
+          "name": "system_program"
+        }
+      ],
+      "args": [
+        {
+          "name": "account_seeds",
+          "type": {
+            "vec": "bytes"
+          }
+        }
+      ]
+    },
+    {
+      "name": "settle_auction",
+      "docs": [
+        "Atomic on-chain settlement of a closed auction (Level C step 3b).",
+        "Runs on L1 AFTER close_auction's commit+undelegate has been processed.",
+        "",
+        "1. Validates the winner SystemAccount matches Job.winner.",
+        "2. Transfers winning_amount lamports from the Job PDA → winner.",
+        "3. Closes the Job PDA via Anchor's `close = requester` constraint,",
+        "refunding ALL remaining lamports (rent + sponsor pre-fund residual",
+        "+ unused escrow = max_bid_deposit - winning_amount) to the requester.",
+        "",
+        "Net per auction: requester pays exactly winning_amount + tx fees. No",
+        "lamports stranded in the Job PDA. No off-chain trust needed: the",
+        "program enforces every lamport move."
+      ],
+      "discriminator": [
+        246,
+        196,
+        183,
+        98,
+        222,
+        139,
+        46,
+        133
+      ],
+      "accounts": [
+        {
+          "name": "requester",
+          "writable": true,
+          "signer": true,
+          "relations": [
+            "job"
+          ]
+        },
+        {
+          "name": "winner",
+          "docs": [
+            "Settlement recipient. Must match Job.winner (verified in handler).",
+            "`mut` because we transfer lamports in."
+          ],
+          "writable": true
+        },
+        {
+          "name": "job",
+          "docs": [
+            "Job PDA must already be back on L1 (i.e. close_auction's",
+            "commit+undelegate has been processed by the magic program). Anchor's",
+            "`close = requester` refunds residual lamports at exit time."
+          ],
+          "writable": true
+        },
+        {
+          "name": "system_program",
+          "address": "11111111111111111111111111111111"
+        }
+      ],
+      "args": []
+    },
+    {
+      "name": "settle_auction_refund",
+      "docs": [
+        "SOL-refund-only variant of settle_auction. Used in 'live-usdc-tee'",
+        "settlement mode where the winner is paid via a separate private USDC",
+        "transferSpl bundle (see auction/onchain-coordinator.ts) and the SOL",
+        "escrow inside the Job PDA is purely a trustless backstop that should",
+        "flow back to the requester.",
+        "",
+        "Behavior:",
+        "- Validates the auction is closed (Job.winner.is_some()).",
+        "- Does NOT pay any SOL to the winner.",
+        "- Closes the Job PDA via Anchor's `close = requester` constraint,",
+        "which refunds 100% of the Job's lamport balance (rent + escrow)",
+        "to the requester at exit time.",
+        "- Emits Settled with winning_amount = 0 (signals \"USDC-mode refund\")",
+        "and requester_refund equal to the full pre-close lamport balance",
+        "minus rent-exempt minimum.",
+        "",
+        "Trust story: the SOL escrow path is fully program-enforced even in",
+        "USDC settlement mode. The USDC payout itself is coordinator-driven",
+        "(see knowledge pack §15: private SPL transfers route through the TEE",
+        "shuttle, not through this program), so the program guarantees the",
+        "refund leg here and the TEE guarantees the USDC leg there."
+      ],
+      "discriminator": [
+        191,
+        180,
+        76,
+        7,
+        219,
+        56,
+        252,
+        139
+      ],
+      "accounts": [
+        {
+          "name": "requester",
+          "writable": true,
+          "signer": true,
+          "relations": [
+            "job"
+          ]
+        },
+        {
+          "name": "job",
+          "docs": [
+            "Job PDA must already be back on L1 (close_auction's commit+undelegate",
+            "has been processed by the magic program). `close = requester` refunds",
+            "100% of residual lamports — rent + full escrow — to the requester at",
+            "exit time. No winner account needed: USDC payout runs out-of-band via",
+            "the SDK's transferSpl helper (see auction/onchain-coordinator.ts)."
+          ],
+          "writable": true
+        },
+        {
+          "name": "system_program",
+          "address": "11111111111111111111111111111111"
+        }
+      ],
+      "args": []
+    },
+    {
+      "name": "submit_bid",
+      "docs": [
+        "Provider submits a bid against an open Job. Runs INSIDE the ER (the Job",
+        "must already be delegated). Uses the SDK's `#[ephemeral_accounts]`",
+        "pattern: the Job sponsors the new Bid PDA's allocation in PER, so no",
+        "regular fee payer is needed (per MagicBlock: ER is gasless and `mut` on",
+        "a Signer signals \"fee payer\", which trips an eligibility check we have",
+        "no way to satisfy from a plain user wallet)."
+      ],
+      "discriminator": [
+        19,
+        164,
+        237,
+        254,
+        64,
+        139,
+        237,
+        93
+      ],
+      "accounts": [
+        {
+          "name": "provider",
+          "signer": true
+        },
+        {
+          "name": "job",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  106,
+                  111,
+                  98
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "job.requester",
+                "account": "Job"
+              },
+              {
+                "kind": "account",
+                "path": "job.job_nonce",
+                "account": "Job"
+              }
+            ]
+          }
+        },
+        {
+          "name": "bid",
+          "docs": [
+            "SDK's `#[ephemeral_accounts]` macro generates a `create_ephemeral_bid`",
+            "helper that allocates this account using lamports from `job` (the",
+            "`sponsor` field) without going through the system_program's normal",
+            "fee-paying flow."
+          ],
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  98,
+                  105,
+                  100
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "job"
+              },
+              {
+                "kind": "account",
+                "path": "provider"
+              }
+            ]
+          }
+        },
+        {
+          "name": "vault",
+          "writable": true,
+          "address": "MagicVau1t999999999999999999999999999999999"
+        },
+        {
+          "name": "magic_program",
+          "address": "Magic11111111111111111111111111111111111111"
+        }
+      ],
+      "args": [
+        {
+          "name": "args",
+          "type": {
+            "defined": {
+              "name": "SubmitBidArgs"
+            }
+          }
+        }
+      ]
+    }
+  ],
+  "accounts": [
+    {
+      "name": "Job",
+      "discriminator": [
+        75,
+        124,
+        80,
+        203,
+        161,
+        180,
+        202,
+        80
+      ]
+    }
+  ],
+  "events": [
+    {
+      "name": "AuctionClosed",
+      "discriminator": [
+        104,
+        72,
+        168,
+        177,
+        241,
+        79,
+        231,
+        167
+      ]
+    },
+    {
+      "name": "Settled",
+      "discriminator": [
+        232,
+        210,
+        40,
+        17,
+        142,
+        124,
+        145,
+        238
+      ]
+    }
+  ],
+  "errors": [
+    {
+      "code": 6000,
+      "name": "BidExceedsMax",
+      "msg": "bid exceeds job max_bid"
+    },
+    {
+      "code": 6001,
+      "name": "AuctionClosed",
+      "msg": "auction already closed (deadline passed)"
+    },
+    {
+      "code": 6002,
+      "name": "RequesterCannotBid",
+      "msg": "requester cannot bid on own job"
+    },
+    {
+      "code": 6003,
+      "name": "JobNotOpen",
+      "msg": "job is not Open"
+    },
+    {
+      "code": 6004,
+      "name": "InvalidMaxBid",
+      "msg": "max_bid must be > 0"
+    },
+    {
+      "code": 6005,
+      "name": "DeadlineInPast",
+      "msg": "deadline must be in the future"
+    },
+    {
+      "code": 6006,
+      "name": "Overflow",
+      "msg": "arithmetic overflow"
+    },
+    {
+      "code": 6007,
+      "name": "AuctionAlreadyClosed",
+      "msg": "auction has already been closed (winner already set)"
+    },
+    {
+      "code": 6008,
+      "name": "DeadlineNotReached",
+      "msg": "auction deadline has not been reached"
+    },
+    {
+      "code": 6009,
+      "name": "NoBids",
+      "msg": "close_auction requires at least one bid in remaining_accounts"
+    },
+    {
+      "code": 6010,
+      "name": "InvalidBidOwner",
+      "msg": "a bid account is owned by the wrong program"
+    },
+    {
+      "code": 6011,
+      "name": "BidJobMismatch",
+      "msg": "a bid account references a different job"
+    },
+    {
+      "code": 6012,
+      "name": "EscrowBelowMaxBid",
+      "msg": "max_bid_deposit must be ≥ max_bid"
+    },
+    {
+      "code": 6013,
+      "name": "AuctionNotClosed",
+      "msg": "auction has not been closed yet (no winner set)"
+    },
+    {
+      "code": 6014,
+      "name": "WinnerMismatch",
+      "msg": "provided winner account does not match Job.winner"
+    },
+    {
+      "code": 6015,
+      "name": "InsufficientEscrow",
+      "msg": "Job PDA balance below winning_amount — escrow under-funded"
+    },
+    {
+      "code": 6016,
+      "name": "InvalidJobAccount",
+      "msg": "Job PDA failed owner / data validation"
+    }
+  ],
+  "types": [
+    {
+      "name": "AuctionClosed",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "job",
+            "type": "pubkey"
+          },
+          {
+            "name": "winner",
+            "type": "pubkey"
+          },
+          {
+            "name": "amount",
+            "type": "u64"
+          }
+        ]
+      }
+    },
+    {
+      "name": "DelegateJobArgs",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "job_nonce",
+            "type": {
+              "array": [
+                "u8",
+                8
+              ]
+            }
+          }
+        ]
+      }
+    },
+    {
+      "name": "Job",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "requester",
+            "type": "pubkey"
+          },
+          {
+            "name": "task_type",
+            "type": "u8"
+          },
+          {
+            "name": "max_bid",
+            "type": "u64"
+          },
+          {
+            "name": "deadline",
+            "type": "i64"
+          },
+          {
+            "name": "status",
+            "type": "u8"
+          },
+          {
+            "name": "bid_count",
+            "type": "u32"
+          },
+          {
+            "name": "job_nonce",
+            "type": "u64"
+          },
+          {
+            "name": "winner",
+            "docs": [
+              "Set by close_auction. None until the auction has been closed on-chain."
+            ],
+            "type": {
+              "option": "pubkey"
+            }
+          },
+          {
+            "name": "winning_amount",
+            "docs": [
+              "Lowest bid amount across all submitted Bids; matches winner."
+            ],
+            "type": {
+              "option": "u64"
+            }
+          },
+          {
+            "name": "max_bid_deposit",
+            "docs": [
+              "Escrow size posted at job creation. Must be ≥ max_bid. Records what",
+              "the requester originally locked up so settle_auction (and any explorer)",
+              "can compute the refund cleanly."
+            ],
+            "type": "u64"
+          }
+        ]
+      }
+    },
+    {
+      "name": "PostJobArgs",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "task_type",
+            "type": "u8"
+          },
+          {
+            "name": "max_bid",
+            "type": "u64"
+          },
+          {
+            "name": "deadline",
+            "type": "i64"
+          },
+          {
+            "name": "job_nonce",
+            "type": {
+              "array": [
+                "u8",
+                8
+              ]
+            }
+          },
+          {
+            "name": "max_bid_deposit",
+            "docs": [
+              "Lamports to escrow inside the Job PDA at creation. Must be ≥ max_bid.",
+              "Pay this once up front; settle_auction returns the unused portion."
+            ],
+            "type": "u64"
+          }
+        ]
+      }
+    },
+    {
+      "name": "Settled",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "job",
+            "type": "pubkey"
+          },
+          {
+            "name": "winner",
+            "type": "pubkey"
+          },
+          {
+            "name": "winning_amount",
+            "type": "u64"
+          },
+          {
+            "name": "requester_refund",
+            "type": "u64"
+          }
+        ]
+      }
+    },
+    {
+      "name": "SubmitBidArgs",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "amount_lamports",
+            "type": "u64"
+          },
+          {
+            "name": "confidence",
+            "type": "u16"
+          }
+        ]
+      }
+    }
+  ]
+}

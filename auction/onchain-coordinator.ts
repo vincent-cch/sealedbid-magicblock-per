@@ -35,9 +35,12 @@
 //   - Bids run through the TEE-protected ER (https://devnet-tee.magicblock.app),
 //     not the generic non-TEE one. We proved both paths in PER-INTEGRATION-LOG
 //     entry (r); TEE is canonical.
-//   - The IDL is fetched on-chain via `anchor idl fetch` shell-out because
-//     @coral-xyz/anchor 0.32.1 doesn't yet read the new metadata-program format
-//     used by anchor-cli 1.0.1 (entry m). Cached after the first fetch.
+//   - The IDL is bundled at `idl/sealedbid.json` and imported directly. The
+//     program is upgrade-only (program ID never rotates), so a snapshot is
+//     stable. We previously shelled out to `anchor idl fetch` because
+//     @coral-xyz/anchor 0.32.1 can't decode the on-chain metadata format
+//     anchor-cli 1.0.1 publishes (Program.fetchIdl returns null), but the
+//     shell-out broke on hosts without the anchor CLI installed (entry aa).
 //   - Bid is not in IDL.accounts (it's `AccountInfo` with `eph` on the program
 //     side), so we hand-decode the Borsh layout instead of using anchor's
 //     typed account fetch.
@@ -53,8 +56,10 @@ import {
   SystemProgram,
   Transaction,
 } from '@solana/web3.js';
-import { execFileSync } from 'node:child_process';
 import { randomBytes } from 'node:crypto';
+import { readFileSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
+import path from 'node:path';
 import nacl from 'tweetnacl';
 import {
   getAuthToken,
@@ -274,15 +279,20 @@ export class OnchainAuctionCoordinator extends EventEmitter {
     this.authTokenCache.clear();
   }
 
-  /** Lazy IDL fetch via `anchor idl fetch` (one-shot, cached for the process). */
+  /**
+   * Load the bundled IDL from `idl/sealedbid.json`. No subprocess, no
+   * network — works on any host (including VPS without the anchor CLI).
+   * Cached on the instance because the IDL is constant for a deployed
+   * program.
+   */
   async ensureIdl(): Promise<any> {
     if (this.idl) return this.idl;
-    const json = execFileSync(
-      'anchor',
-      ['idl', 'fetch', PROGRAM_ID.toBase58(), '--provider.cluster', 'devnet'],
-      { encoding: 'utf-8' },
-    );
-    const idl = JSON.parse(json);
+    // Resolve relative to this module's location so the path works regardless
+    // of which working directory the server was launched from (pm2 sets cwd
+    // differently than `npm run server`).
+    const here = path.dirname(fileURLToPath(import.meta.url));
+    const idlPath = path.resolve(here, '..', 'idl', 'sealedbid.json');
+    const idl = JSON.parse(readFileSync(idlPath, 'utf-8'));
     idl.address = PROGRAM_ID.toBase58();
     this.idl = idl;
     return idl;

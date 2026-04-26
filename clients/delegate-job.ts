@@ -10,10 +10,10 @@ import anchorPkg from '@coral-xyz/anchor';
 const { AnchorProvider, BN, Program, Wallet } = anchorPkg;
 type AnchorIdl = Parameters<typeof Program['constructor']>[0];
 import { Connection, Keypair, PublicKey, SystemProgram } from '@solana/web3.js';
-import { execFileSync } from 'node:child_process';
 import { readFileSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 
 const PROGRAM_ID = new PublicKey('5JaacAzrnjCwsigZxxHBDkiNuT2SQFG8xxMKVgyy629Q');
 const DELEGATION_PROGRAM = new PublicKey('DELeGGvXpWV2fqJUhqcF5ZSYMS4JTLjteaAMARRSaeSh');
@@ -39,12 +39,11 @@ async function main() {
   const provider = new AnchorProvider(connection, wallet, { commitment: 'confirmed' });
   anchorPkg.setProvider(provider);
 
-  const idlJson = execFileSync(
-    'anchor',
-    ['idl', 'fetch', PROGRAM_ID.toBase58(), '--provider.cluster', 'devnet'],
-    { encoding: 'utf-8' },
-  );
-  const idl = JSON.parse(idlJson);
+  // IDL bundled at idl/sealedbid.json (entry aa) — works on hosts without
+  // the anchor CLI installed.
+  const here = path.dirname(fileURLToPath(import.meta.url));
+  const idlPath = path.resolve(here, '..', 'idl', 'sealedbid.json');
+  const idl = JSON.parse(readFileSync(idlPath, 'utf-8'));
   idl.address = PROGRAM_ID.toBase58();
   const program = new Program(idl, provider);
 

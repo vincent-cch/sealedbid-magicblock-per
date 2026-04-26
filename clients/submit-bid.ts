@@ -13,7 +13,6 @@ import 'dotenv/config';
 import anchorPkg from '@coral-xyz/anchor';
 const { AnchorProvider, BN, Program, Wallet } = anchorPkg;
 import { Connection, Keypair, PublicKey, SystemProgram, Transaction } from '@solana/web3.js';
-import { execFileSync } from 'node:child_process';
 import { readFileSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -53,13 +52,10 @@ async function main() {
   console.log('Requester    :', requester.publicKey.toBase58());
   console.log('Provider     :', provider.publicKey.toBase58());
 
-  // ── 1. Fetch IDL once (it's the same program either RPC we use) ───────
-  const idlJson = execFileSync(
-    'anchor',
-    ['idl', 'fetch', PROGRAM_ID.toBase58(), '--provider.cluster', 'devnet'],
-    { encoding: 'utf-8' },
-  );
-  const idl = JSON.parse(idlJson);
+  // ── 1. Load bundled IDL (entry aa: works on hosts without the anchor CLI) ─
+  const here = path.dirname(fileURLToPath(import.meta.url));
+  const idlPath = path.resolve(here, '..', 'idl', 'sealedbid.json');
+  const idl = JSON.parse(readFileSync(idlPath, 'utf-8'));
   idl.address = PROGRAM_ID.toBase58();
 
   // ── 2. Bootstrap a fresh Job on base devnet ───────────────────────────
