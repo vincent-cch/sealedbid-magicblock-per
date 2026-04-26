@@ -78,6 +78,16 @@ interface Stats {
   winners: Record<ShipName, number>;
 }
 
+interface LastSettlement {
+  jobId: string;
+  winnerName: string;
+  mode: string;
+  settleSig: string | null;
+  settleUrl: string | null;
+  usdcScheduleSig: string | null;
+  failed: boolean;
+}
+
 const PROJECTILE_DUR_MS = 800;
 const COIN_DUR_MS = 1100;
 const SHIP_FIRE_MS = 350;
@@ -106,6 +116,7 @@ export function Arcade() {
     winners: { speedy: 0, accurate: 0, budget: 0 },
   });
   const [idleReason, setIdleReason] = useState<IdleReason>(null);
+  const [lastSettlement, setLastSettlement] = useState<LastSettlement | null>(null);
 
   // Force ticks for time-based UI (throughput counter, fade timers).
   const [, setTick] = useState(0);
@@ -264,6 +275,34 @@ export function Arcade() {
             totalUsdcMicro: isUsdc ? s.totalUsdcMicro + (msg.usdcAmountMicro ?? 0) : s.totalUsdcMicro,
           }));
         }
+        // Persist a clickable explorer link for the most recent settlement.
+        // Stays visible until the next auction settles. Hidden in simulated
+        // mode (no real on-chain tx to point at).
+        if (isLive) {
+          const settleSig: string = msg.sig ?? '';
+          const settleUrl =
+            (msg.explorerUrl as string | null | undefined) ??
+            (settleSig ? `https://explorer.solana.com/tx/${settleSig}?cluster=devnet` : null);
+          setLastSettlement({
+            jobId: msg.jobId,
+            winnerName: msg.winner?.providerName ?? '',
+            mode: msg.mode,
+            settleSig: settleSig || null,
+            settleUrl,
+            usdcScheduleSig: msg.usdcScheduleSig ?? null,
+            failed: false,
+          });
+        } else if (msg.mode === 'failed') {
+          setLastSettlement({
+            jobId: msg.jobId,
+            winnerName: msg.winner?.providerName ?? '',
+            mode: msg.mode,
+            settleSig: null,
+            settleUrl: null,
+            usdcScheduleSig: null,
+            failed: true,
+          });
+        }
         break;
       }
       default:
@@ -373,6 +412,40 @@ export function Arcade() {
         projectiles={projectiles}
         coins={coins}
       />
+
+      {/* LAST SETTLEMENT — clickable explorer link, persists until the next live settle. */}
+      {lastSettlement && (lastSettlement.settleUrl || lastSettlement.usdcScheduleSig || lastSettlement.failed) && (
+        <div className="absolute bottom-[88px] left-0 right-0 z-10 px-8 pb-2 flex flex-wrap items-center justify-center gap-x-6 gap-y-1">
+          <span className="text-[8px] tracking-widest text-zinc-500">
+            LAST SETTLE · #{shortJob(lastSettlement.jobId)} · {lastSettlement.winnerName.toUpperCase()}
+          </span>
+          {lastSettlement.failed && (
+            <span className="text-[10px] tracking-wider text-rose-400">SETTLEMENT FAILED</span>
+          )}
+          {lastSettlement.settleUrl && (
+            <a
+              href={lastSettlement.settleUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="text-purple-400 hover:text-purple-300 hover:underline text-xs uppercase tracking-wider cursor-pointer"
+              style={{ textShadow: '0 0 6px rgba(192,132,252,0.6)' }}
+            >
+              ON-CHAIN SETTLEMENT →
+            </a>
+          )}
+          {lastSettlement.usdcScheduleSig && (
+            <a
+              href={`https://explorer.solana.com/tx/${lastSettlement.usdcScheduleSig}?cluster=devnet`}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="text-purple-400 hover:text-purple-300 hover:underline text-xs uppercase tracking-wider cursor-pointer"
+              style={{ textShadow: '0 0 6px rgba(192,132,252,0.6)' }}
+            >
+              USDC SCHEDULE →
+            </a>
+          )}
+        </div>
+      )}
 
       {/* STATS STRIP */}
       <div className="absolute bottom-0 left-0 right-0 z-10 border-t-2 border-fuchsia-500/40 bg-black/70 backdrop-blur px-8 py-4">

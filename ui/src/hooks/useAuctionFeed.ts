@@ -156,13 +156,21 @@ export function useAuctionFeed() {
             a.jobId === msg.jobId
               ? {
                   ...a,
-                  settlement: { sig: msg.sig, mode: msg.mode, explorerUrl: msg.explorerUrl },
+                  settlement: {
+                    sig: msg.sig,
+                    mode: msg.mode,
+                    explorerUrl: msg.explorerUrl,
+                    usdcAmountMicro: msg.usdcAmountMicro,
+                    usdcScheduleSig: msg.usdcScheduleSig,
+                  },
                   // v1 emitted mode 'live' for on-chain settlements; v2 emits
-                  // 'live-sol' / 'live-usdc-tee'. All three signal "real on-chain"
-                  // settlement and should mark the card as hero. Cast to string
-                  // because v1's ServerMessage union doesn't know about the
-                  // v2 modes; we don't want to widen the type and force a UI refactor.
-                  hero: ((msg.mode as string) === 'live' || (msg.mode as string) === 'live-sol' || (msg.mode as string) === 'live-usdc-tee') || a.hero,
+                  // 'live-sol' / 'live-usdc-tee'. All three signal "real
+                  // on-chain" settlement and should mark the card as hero.
+                  hero:
+                    msg.mode === 'live' ||
+                    msg.mode === 'live-sol' ||
+                    msg.mode === 'live-usdc-tee' ||
+                    a.hero,
                 }
               : a,
           );

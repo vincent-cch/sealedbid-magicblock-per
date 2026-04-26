@@ -77,26 +77,47 @@ export function AuctionCard({ auction }: { auction: AuctionState }) {
             </div>
             <div className="text-zinc-500 text-[10px]">{auction.clearingMs}ms</div>
           </div>
-          {auction.settlement && (
-            <div className="mono text-[10px] text-zinc-500 truncate">
-              {auction.hero ? (
-                auction.settlement.sig && auction.settlement.explorerUrl ? (
+          {auction.settlement && (() => {
+            const s = auction.settlement;
+            const settleSig = s.sig;
+            const settleUrl =
+              s.explorerUrl ?? (settleSig ? `https://explorer.solana.com/tx/${settleSig}?cluster=devnet` : null);
+            const usdcUrl = s.usdcScheduleSig
+              ? `https://explorer.solana.com/tx/${s.usdcScheduleSig}?cluster=devnet`
+              : null;
+            const failed = s.mode === 'failed';
+
+            return (
+              <div className="mt-1 flex flex-col gap-0.5">
+                {failed && (
+                  <span className="mono text-[10px] text-rose-400 font-semibold">SETTLEMENT FAILED</span>
+                )}
+                {!failed && settleSig && settleUrl && (
                   <a
-                    href={auction.settlement.explorerUrl}
+                    href={settleUrl}
                     target="_blank"
-                    rel="noreferrer"
-                    className="text-fuchsia-400 underline hover:text-fuchsia-300"
+                    rel="noopener noreferrer"
+                    className="text-purple-400 hover:text-purple-300 hover:underline text-xs uppercase tracking-wider inline-block cursor-pointer"
                   >
-                    ON-CHAIN SETTLEMENT ↗
+                    ON-CHAIN SETTLEMENT →
                   </a>
-                ) : (
-                  <span className="text-rose-400 font-semibold">SETTLEMENT FAILED</span>
-                )
-              ) : (
-                <span>sig {auction.settlement.sig.slice(0, 18)}...</span>
-              )}
-            </div>
-          )}
+                )}
+                {usdcUrl && (
+                  <a
+                    href={usdcUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="text-purple-400 hover:text-purple-300 hover:underline text-xs uppercase tracking-wider inline-block cursor-pointer"
+                  >
+                    USDC SCHEDULE →
+                  </a>
+                )}
+                {!failed && !settleSig && !usdcUrl && (
+                  <span className="mono text-[10px] text-zinc-500 italic">awaiting settlement…</span>
+                )}
+              </div>
+            );
+          })()}
         </div>
       )}
 
