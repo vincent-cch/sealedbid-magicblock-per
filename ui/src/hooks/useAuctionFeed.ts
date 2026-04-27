@@ -34,8 +34,10 @@ export interface FeedStats {
  *   'budget'      → server's requester wallet dropped below the SOL floor.
  *                   Server auto-resumes when balance recovers; UI clears
  *                   the banner on `demo-resumed-budget`.
+ *   'settle-error' → server saw 3+ consecutive settle failures; loop is
+ *                    paused. UI clears on demo-resumed-settle.
  */
-export type IdleReason = 'session-cap' | 'budget' | null;
+export type IdleReason = 'session-cap' | 'budget' | 'settle-error' | null;
 
 export function useAuctionFeed() {
   const [auctions, setAuctions] = useState<AuctionState[]>([]);
@@ -73,6 +75,11 @@ export function useAuctionFeed() {
         try { msg = JSON.parse(evt.data); } catch { return; }
         // Control-channel events from the long-dwell protection layer.
         if (msg.type === 'demo-idle') { setIdleReason('session-cap'); return; }
+        if (msg.type === 'demo-paused-settle-error') { setIdleReason('settle-error'); return; }
+        if (msg.type === 'demo-resumed-settle') {
+          setIdleReason((prev) => (prev === 'settle-error' ? null : prev));
+          return;
+        }
         if (msg.type === 'demo-paused-budget') { setIdleReason('budget'); return; }
         if (msg.type === 'demo-resumed-budget') {
           setIdleReason((prev) => (prev === 'budget' ? null : prev));
