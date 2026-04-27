@@ -22,7 +22,7 @@
 //     `resume-session` JSON frames; server respects them per-session.
 
 import 'dotenv/config';
-import { Connection, Keypair, LAMPORTS_PER_SOL, PublicKey } from '@solana/web3.js';
+import { Connection, Keypair, LAMPORTS_PER_SOL, PublicKey, SystemProgram, Transaction, sendAndConfirmTransaction } from '@solana/web3.js';
 import { randomBytes } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import path from 'node:path';
@@ -43,7 +43,7 @@ const MIN_REQUESTER_BALANCE_SOL = 0.05; // bail out at startup if requester is t
 
 // Long-dwell protection (entry ab).
 const MAX_PER_SESSION = Number(process.env.MAX_AUCTIONS_PER_SESSION ?? 100);
-const SERVER_REQUESTER_FLOOR_SOL = Number(process.env.SERVER_REQUESTER_FLOOR_SOL ?? 0.5);
+const SERVER_REQUESTER_FLOOR_SOL = Number(process.env.SERVER_REQUESTER_FLOOR_SOL ?? 1.0);
 const BUDGET_POLL_MS = 60_000;
 
 const BASE_RPC_URL = process.env.SOLANA_RPC_URL ?? 'https://api.devnet.solana.com';
@@ -119,6 +119,11 @@ interface SessionState {
 const sessions = new Map<WebSocket, SessionState>();
 let budgetLow = false;
 let budgetCheckInflight = false;
+let consecutiveSettleFailures = 0;
+let settleBroken = false;
+const SETTLE_BREAKER_THRESHOLD = 3;
+const PROVIDER_MIN_LAMPORTS = 5_000_000; // 0.005 SOL — auto-refill threshold
+const PROVIDER_REFILL_LAMPORTS = 5_000_000; // top up by 0.005 SOL
 
 function activeSessionCount(): number {
   let n = 0;
@@ -129,7 +134,7 @@ function activeSessionCount(): number {
 }
 
 function shouldFire(): boolean {
-  return !budgetLow && activeSessionCount() > 0;
+  return !budgetLow && !settleBroken && activeSessionCount() > 0;
 }
 
 function sendTo(ws: WebSocket, msg: object): void {
@@ -246,6 +251,30 @@ coordinator.on('auction-closed', (r: AuctionResult) => {
 });
 
 coordinator.on('settled', (s: any) => {
+  if (s.mode === 'failed') {
+    consecutiveSettleFailures++;
+    console.error(`[server] settle failure #${consecutiveSettleFailures} (jobId=${s.jobId}): ${s.error}`);
+    if (consecutiveSettleFailures >= SETTLE_BREAKER_THRESHOLD && !settleBroken) {
+      settleBroken = true;
+      console.error(`[server] CIRCUIT BREAKER TRIPPED — ${SETTLE_BREAKER_THRESHOLD} consecutive settle failures. Pausing loop.`);
+      broadcast({
+        type: 'demo-paused-settle-error',
+        consecutiveFailures: consecutiveSettleFailures,
+        threshold: SETTLE_BREAKER_THRESHOLD,
+        ts: Date.now(),
+      });
+    }
+  } else {
+    if (consecutiveSettleFailures > 0) {
+      console.log(`[server] settle recovered after ${consecutiveSettleFailures} failures`);
+    }
+    consecutiveSettleFailures = 0;
+    if (settleBroken) {
+      settleBroken = false;
+      console.log(`[server] CIRCUIT BREAKER RESET — auctions resuming`);
+      broadcast({ type: 'demo-resumed-settle', ts: Date.now() });
+    }
+  }
   broadcast({
     type: 'settled',
     jobId: s.jobId,
@@ -349,12 +378,42 @@ function chargeAuctionToActiveSessions(): void {
   }
 }
 
+async function ensureProvidersFunded(): Promise<boolean> {
+  for (const p of providers) {
+    try {
+      const bal = await baseConn.getBalance(p.keypair.publicKey);
+      if (bal < PROVIDER_MIN_LAMPORTS) {
+        console.log(`[server] provider ${p.name} low (${bal} lamports) — auto-refilling`);
+        const tx = new Transaction().add(
+          SystemProgram.transfer({
+            fromPubkey: requesterKp.publicKey,
+            toPubkey: p.keypair.publicKey,
+            lamports: PROVIDER_REFILL_LAMPORTS,
+          })
+        );
+        const sig = await sendAndConfirmTransaction(baseConn, tx, [requesterKp]);
+        console.log(`[server] refilled ${p.name}: ${sig}`);
+      }
+    } catch (err) {
+      console.error(`[server] provider check failed for ${p.name}:`, err instanceof Error ? err.message : err);
+      return false;
+    }
+  }
+  return true;
+}
+
 async function startAuctionLoop(): Promise<void> {
   if (running) return;
   running = true;
   console.log('[server] auction loop starting');
 
   while (running && shouldFire()) {
+    const fundsOk = await ensureProvidersFunded();
+    if (!fundsOk) {
+      console.warn('[server] provider funding check failed — sleeping 10s');
+      await new Promise(r => setTimeout(r, 10000));
+      continue;
+    }
     if (inFlight >= MAX_IN_FLIGHT) {
       await new Promise((r) => setTimeout(r, 200));
       continue;
