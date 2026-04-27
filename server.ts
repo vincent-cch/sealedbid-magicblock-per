@@ -121,9 +121,12 @@ let budgetLow = false;
 let budgetCheckInflight = false;
 let consecutiveSettleFailures = 0;
 let settleBroken = false;
+const providerBalanceCache = new Map<string, { lamports: number; fetchedAt: number }>();
 const SETTLE_BREAKER_THRESHOLD = 3;
+const SETTLE_PROBE_INTERVAL_MS = 10 * 60_000; // 10 min between auto-recovery probes
 const PROVIDER_MIN_LAMPORTS = 5_000_000; // 0.005 SOL — auto-refill threshold
 const PROVIDER_REFILL_LAMPORTS = 5_000_000; // top up by 0.005 SOL
+const PROVIDER_BALANCE_CACHE_TTL_MS = 60_000;
 
 function activeSessionCount(): number {
   let n = 0;
@@ -324,6 +327,16 @@ async function checkBudget(): Promise<void> {
   }
 }
 
+function probeBreakerRecovery(): void {
+  if (!settleBroken) return;
+  console.log('[server] breaker probe — auto-resetting after timeout, allowing 3 fresh attempts');
+  consecutiveSettleFailures = 0;
+  settleBroken = false;
+  broadcast({ type: 'demo-resumed-settle', ts: Date.now() });
+  if (!running && shouldFire()) startAuctionLoop();
+}
+setInterval(probeBreakerRecovery, SETTLE_PROBE_INTERVAL_MS);
+
 setInterval(() => { checkBudget(); }, BUDGET_POLL_MS);
 
 // ─── Auction loop ───────────────────────────────────────────────────────────
@@ -379,9 +392,18 @@ function chargeAuctionToActiveSessions(): void {
 }
 
 async function ensureProvidersFunded(): Promise<boolean> {
+  const now = Date.now();
   for (const p of providers) {
+    const key = p.keypair.publicKey.toBase58();
     try {
-      const bal = await baseConn.getBalance(p.keypair.publicKey);
+      let cached = providerBalanceCache.get(key);
+      let bal: number;
+      if (cached && now - cached.fetchedAt < PROVIDER_BALANCE_CACHE_TTL_MS && cached.lamports >= PROVIDER_MIN_LAMPORTS) {
+        bal = cached.lamports;
+      } else {
+        bal = await baseConn.getBalance(p.keypair.publicKey);
+        providerBalanceCache.set(key, { lamports: bal, fetchedAt: now });
+      }
       if (bal < PROVIDER_MIN_LAMPORTS) {
         console.log(`[server] provider ${p.name} low (${bal} lamports) — auto-refilling`);
         const tx = new Transaction().add(
@@ -393,9 +415,11 @@ async function ensureProvidersFunded(): Promise<boolean> {
         );
         const sig = await sendAndConfirmTransaction(baseConn, tx, [requesterKp]);
         console.log(`[server] refilled ${p.name}: ${sig}`);
+        providerBalanceCache.set(key, { lamports: bal + PROVIDER_REFILL_LAMPORTS, fetchedAt: Date.now() });
       }
     } catch (err) {
       console.error(`[server] provider check failed for ${p.name}:`, err instanceof Error ? err.message : err);
+      providerBalanceCache.delete(key);
       return false;
     }
   }
