@@ -37,8 +37,8 @@ import {
 } from './auction/onchain-coordinator.js';
 
 const PORT = 8787;
-const STAGGER_MS = 8000; // ~8s between starts; an auction takes ~6–8s end-to-end
-const MAX_IN_FLIGHT = 1; // strictly sequential — keeps devnet happy and the UI readable
+const STAGGER_MS = 4000; // ~4s between starts; allows two auctions in flight to overlap phases
+const MAX_IN_FLIGHT = 2; // two-at-a-time; validated by the 50-auction stress test (entry y) on devnet's concurrency-2 cap
 const MIN_REQUESTER_BALANCE_SOL = 0.05; // bail out at startup if requester is too poor
 
 // Long-dwell protection (entry ab).
