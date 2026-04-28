@@ -121,6 +121,9 @@ let budgetLow = false;
 let budgetCheckInflight = false;
 let consecutiveSettleFailures = 0;
 let settleBroken = false;
+let consecutiveNoBidsAuctions = 0;
+let bidsBroken = false;
+const BID_BREAKER_THRESHOLD = 3;
 const providerBalanceCache = new Map<string, { lamports: number; fetchedAt: number }>();
 const SETTLE_BREAKER_THRESHOLD = 3;
 const SETTLE_PROBE_INTERVAL_MS = 10 * 60_000; // 10 min between auto-recovery probes
@@ -137,7 +140,7 @@ function activeSessionCount(): number {
 }
 
 function shouldFire(): boolean {
-  return !budgetLow && !settleBroken && activeSessionCount() > 0;
+  return !budgetLow && !settleBroken && !bidsBroken && activeSessionCount() > 0;
 }
 
 function sendTo(ws: WebSocket, msg: object): void {
@@ -235,6 +238,30 @@ coordinator.on('auction-closed', (r: AuctionResult) => {
         amountLamports: r.winner.amountLamports,
       }
     : null;
+  if (r.totalBids === 0) {
+    consecutiveNoBidsAuctions++;
+    console.error(`[server] auction had ZERO valid bids #${consecutiveNoBidsAuctions} (jobId=${r.jobId})`);
+    if (consecutiveNoBidsAuctions >= BID_BREAKER_THRESHOLD && !bidsBroken) {
+      bidsBroken = true;
+      console.error(`[server] BID CIRCUIT BREAKER TRIPPED — ${BID_BREAKER_THRESHOLD} consecutive zero-bid auctions. Pausing loop.`);
+      broadcast({
+        type: 'demo-paused-bids-error',
+        consecutiveZeroBids: consecutiveNoBidsAuctions,
+        threshold: BID_BREAKER_THRESHOLD,
+        ts: Date.now(),
+      });
+    }
+  } else {
+    if (consecutiveNoBidsAuctions > 0) {
+      console.log(`[server] bid path recovered after ${consecutiveNoBidsAuctions} zero-bid auctions`);
+    }
+    consecutiveNoBidsAuctions = 0;
+    if (bidsBroken) {
+      bidsBroken = false;
+      console.log(`[server] BID CIRCUIT BREAKER RESET — auctions resuming`);
+      broadcast({ type: 'demo-resumed-bids', ts: Date.now() });
+    }
+  }
   broadcast({
     type: 'auction-closed',
     jobId: r.jobId,
@@ -329,11 +356,18 @@ async function checkBudget(): Promise<void> {
 }
 
 function probeBreakerRecovery(): void {
-  if (!settleBroken) return;
-  console.log('[server] breaker probe — auto-resetting after timeout, allowing 3 fresh attempts');
-  consecutiveSettleFailures = 0;
-  settleBroken = false;
-  broadcast({ type: 'demo-resumed-settle', ts: Date.now() });
+  if (!settleBroken && !bidsBroken) return;
+  console.log('[server] breaker probe — auto-resetting after timeout, allowing fresh attempts');
+  if (settleBroken) {
+    consecutiveSettleFailures = 0;
+    settleBroken = false;
+    broadcast({ type: 'demo-resumed-settle', ts: Date.now() });
+  }
+  if (bidsBroken) {
+    consecutiveNoBidsAuctions = 0;
+    bidsBroken = false;
+    broadcast({ type: 'demo-resumed-bids', ts: Date.now() });
+  }
   if (!running && shouldFire()) startAuctionLoop();
 }
 setInterval(probeBreakerRecovery, SETTLE_PROBE_INTERVAL_MS);

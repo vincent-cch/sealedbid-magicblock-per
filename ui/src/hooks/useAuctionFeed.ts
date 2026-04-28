@@ -37,7 +37,7 @@ export interface FeedStats {
  *   'settle-error' → server saw 3+ consecutive settle failures; loop is
  *                    paused. UI clears on demo-resumed-settle.
  */
-export type IdleReason = 'session-cap' | 'budget' | 'settle-error' | null;
+export type IdleReason = 'session-cap' | 'budget' | 'settle-error' | 'bids-error' | null;
 
 export function useAuctionFeed() {
   const [auctions, setAuctions] = useState<AuctionState[]>([]);
@@ -78,6 +78,11 @@ export function useAuctionFeed() {
         if (msg.type === 'demo-paused-settle-error') { setIdleReason('settle-error'); return; }
         if (msg.type === 'demo-resumed-settle') {
           setIdleReason((prev) => (prev === 'settle-error' ? null : prev));
+          return;
+        }
+        if (msg.type === 'demo-paused-bids-error') { setIdleReason('bids-error'); return; }
+        if (msg.type === 'demo-resumed-bids') {
+          setIdleReason((prev) => (prev === 'bids-error' ? null : prev));
           return;
         }
         if (msg.type === 'demo-paused-budget') { setIdleReason('budget'); return; }
