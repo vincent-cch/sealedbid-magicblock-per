@@ -223,6 +223,7 @@ coordinator.on('bid-submitted', (e: any) => {
 });
 
 coordinator.on('bid-rejected', (e: any) => {
+  console.error(`[server] bid REJECTED — provider=${e.providerName} jobId=${e.jobId}: ${e.reason}`);
   broadcast({ type: 'bid-rejected', ...e });
 });
 
