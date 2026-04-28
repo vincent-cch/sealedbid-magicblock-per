@@ -37,7 +37,7 @@ import {
 } from './auction/onchain-coordinator.js';
 
 const PORT = 8787;
-const STAGGER_MS = 6000; // ~6s between starts; matches the 8s bid window so cadence/window stay aligned
+const STAGGER_MS = 4000; // ~4s between starts; widening window to 8s caused 100% no-valid-bids — keep at 4s/5s
 const MAX_IN_FLIGHT = 1; // strictly sequential — coordinator's provider agents share state, parallel mode produces no-valid-bids auctions
 const MIN_REQUESTER_BALANCE_SOL = 0.05; // bail out at startup if requester is too poor
 
@@ -454,7 +454,7 @@ async function startAuctionLoop(): Promise<void> {
         taskType,
         providers,
         maxBidLamports: 800_000,
-        windowMs: 8000,
+        windowMs: 5000,
         description: `${taskType} #${i + 1}`,
       })
       .catch((err) => {
